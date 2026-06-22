@@ -101,8 +101,17 @@ const registrarPagoOnline = async ({
   try {
     await transaction.begin();
 
+    /*
+      Importante:
+      Para validar el recibo del inquilino usamos:
+      Recibo -> CuentaCobroInmueble -> Inmueble
+      porque esa es la relación real usada al listar recibos.
+
+      No forzamos i.empresa_id = @empresa_id como condición principal,
+      porque el pago del cliente debe validarse principalmente por:
+      res.inquilino_id = @usuario_id.
+    */
     const reciboResult = await new sql.Request(transaction)
-      .input('empresa_id', sql.Int, empresa_id)
       .input('usuario_id', sql.Int, usuario_id)
       .input('recibo_id', sql.Int, recibo_id)
       .query(`
@@ -121,12 +130,13 @@ const registrarPagoOnline = async ({
           i.codigo AS codigo_inmueble,
           i.nombre AS nombre_inmueble
         FROM finance.Recibo r WITH (UPDLOCK, ROWLOCK)
+        INNER JOIN finance.CuentaCobroInmueble cc
+          ON cc.cuenta_cobro_inmueble_id = r.cuenta_cobro_inmueble_id
+        INNER JOIN catalog.Inmueble i
+          ON i.inmueble_id = cc.inmueble_id
         INNER JOIN booking.Reserva res
           ON res.reserva_id = r.reserva_id
-        INNER JOIN catalog.Inmueble i
-          ON i.inmueble_id = res.inmueble_id
         WHERE r.recibo_id = @recibo_id
-          AND i.empresa_id = @empresa_id
           AND res.inquilino_id = @usuario_id;
       `);
 
@@ -147,6 +157,10 @@ const registrarPagoOnline = async ({
       throw new Error('RECIBO_YA_PAGADO');
     }
 
+    if (!['EMITIDO', 'PARCIAL', 'VENCIDO'].includes(recibo.estado_recibo)) {
+      throw new Error('RECIBO_NO_DISPONIBLE_PARA_PAGO');
+    }
+
     const monto = Number(recibo.saldo_pendiente);
 
     const metodoPagoNormalizado = String(metodo_pago || 'ONLINE')
@@ -162,6 +176,12 @@ const registrarPagoOnline = async ({
 
     if (!metodosPermitidos.includes(metodoPagoNormalizado)) {
       throw new Error('METODO_PAGO_NO_VALIDO');
+    }
+
+    const empresaOperacionId = Number(recibo.empresa_id || empresa_id);
+
+    if (!empresaOperacionId) {
+      throw new Error('EMPRESA_NO_DETERMINADA');
     }
 
     const fechaPago = new Date();
@@ -224,7 +244,10 @@ const registrarPagoOnline = async ({
         FROM finance.CategoriaMovimiento
         WHERE naturaleza = 'INGRESO'
           AND activo = 1
-          AND nombre LIKE '%alquiler%'
+          AND (
+            nombre LIKE '%alquiler%'
+            OR nombre LIKE '%renta%'
+          )
         ORDER BY categoria_movimiento_id ASC;
       `);
 
@@ -235,7 +258,8 @@ const registrarPagoOnline = async ({
     }
 
     const cuentaResult = await new sql.Request(transaction)
-      .input('empresa_id', sql.Int, empresa_id)
+      .input('empresa_id', sql.Int, empresaOperacionId)
+      .input('moneda', sql.Char(3), recibo.moneda || 'PEN')
       .query(`
         SELECT TOP 1
           cuenta_bancaria_id,
@@ -246,6 +270,10 @@ const registrarPagoOnline = async ({
         FROM finance.CuentaBancaria WITH (UPDLOCK, ROWLOCK)
         WHERE empresa_id = @empresa_id
           AND activa = 1
+          AND (
+            moneda = @moneda
+            OR moneda IS NULL
+          )
         ORDER BY
           CASE
             WHEN nombre_cuenta LIKE '%Caja Principal%' THEN 0
@@ -273,7 +301,7 @@ const registrarPagoOnline = async ({
       .input('pago_id', sql.Int, pago.pago_id)
       .input('fecha_movimiento', sql.DateTime2, fechaPago)
       .input('concepto', sql.NVarChar(200), `Cobro de alquiler - Recibo #${recibo.recibo_id}`)
-      .input('descripcion', sql.NVarChar(500), `Pago online del alquiler del inmueble ${recibo.nombre_inmueble || recibo.codigo_inmueble}.`)
+      .input('descripcion', sql.NVarChar(500), `Pago online del alquiler del inmueble ${recibo.nombre_inmueble || recibo.codigo_inmueble || recibo.inmueble_id}.`)
       .input('importe', sql.Decimal(14, 2), monto)
       .input('saldo_anterior', sql.Decimal(14, 2), saldoAnterior)
       .input('saldo_posterior', sql.Decimal(14, 2), saldoPosterior)
@@ -342,8 +370,10 @@ const registrarPagoOnline = async ({
     await transaction.commit();
 
     return {
+      ok: true,
       pago,
       movimiento,
+      monto_pagado: monto,
       recibo_actualizado: {
         recibo_id: recibo.recibo_id,
         estado_recibo: 'PAGADO',
@@ -421,9 +451,7 @@ const generarReciboPendientePrueba = async ({
   try {
     await transaction.begin();
 
-    const requestReserva = new sql.Request(transaction);
-
-    const reservaResult = await requestReserva
+    const reservaResult = await new sql.Request(transaction)
       .input('usuario_id', sql.Int, usuario_id)
       .input('reserva_id', sql.Int, reserva_id)
       .query(`
@@ -474,9 +502,7 @@ const generarReciboPendientePrueba = async ({
       };
     }
 
-    const requestCuenta = new sql.Request(transaction);
-
-    const cuentaResult = await requestCuenta
+    const cuentaResult = await new sql.Request(transaction)
       .input('inmueble_id', sql.Int, reserva.inmueble_id)
       .query(`
         SELECT TOP 1
@@ -489,9 +515,7 @@ const generarReciboPendientePrueba = async ({
     let cuenta_cobro_inmueble_id = cuentaResult.recordset[0]?.cuenta_cobro_inmueble_id;
 
     if (!cuenta_cobro_inmueble_id) {
-      const requestCrearCuenta = new sql.Request(transaction);
-
-      const crearCuentaResult = await requestCrearCuenta
+      const crearCuentaResult = await new sql.Request(transaction)
         .input('inmueble_id', sql.Int, reserva.inmueble_id)
         .input('numero_recibo_base', sql.NVarChar(50), `RC-${reserva.inmueble_id}-${Date.now()}`)
         .query(`
@@ -531,9 +555,7 @@ const generarReciboPendientePrueba = async ({
     let intentos = 0;
 
     while (intentos < 24) {
-      const requestExiste = new sql.Request(transaction);
-
-      const existeResult = await requestExiste
+      const existeResult = await new sql.Request(transaction)
         .input('cuenta_cobro_inmueble_id', sql.Int, cuenta_cobro_inmueble_id)
         .input('periodo_anio', sql.Int, anio)
         .input('periodo_mes', sql.TinyInt, mes)
@@ -573,9 +595,7 @@ const generarReciboPendientePrueba = async ({
       ? new Date(fecha_vencimiento)
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const requestRecibo = new sql.Request(transaction);
-
-    const reciboResult = await requestRecibo
+    const reciboResult = await new sql.Request(transaction)
       .input('cuenta_cobro_inmueble_id', sql.Int, cuenta_cobro_inmueble_id)
       .input('reserva_id', sql.Int, reserva.reserva_id)
       .input('periodo_anio', sql.Int, anio)
