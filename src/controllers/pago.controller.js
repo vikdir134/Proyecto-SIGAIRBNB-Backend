@@ -148,11 +148,29 @@ const pagarReciboOnline = async (req, res) => {
       monto_pagado: resultado.monto_pagado
     });
 
-  } catch (error) {
+    } catch (error) {
     console.error('Error al pagar recibo:', error);
 
+    if (error.message === 'RECIBO_NO_VALIDO') {
+      return res.status(404).json({
+        mensaje: 'El recibo no existe, no pertenece al inquilino autenticado o no está disponible para pago.'
+      });
+    }
+
+    if (error.message === 'RECIBO_YA_PAGADO') {
+      return res.status(409).json({
+        mensaje: 'Este recibo ya fue pagado anteriormente.'
+      });
+    }
+
+    if (error.message === 'RECIBO_ANULADO') {
+      return res.status(409).json({
+        mensaje: 'No se puede pagar un recibo anulado.'
+      });
+    }
+
     return res.status(500).json({
-      mensaje: 'Error interno al procesar el pago.'
+      mensaje: error.message || 'Error interno al procesar el pago.'
     });
   }
 };
