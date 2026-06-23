@@ -39,6 +39,110 @@ const calcularDiasReserva = (fechaInicio, fechaFin) => {
   return Math.max(dias, 1);
 };
 
+const calcularRentaReserva = ({
+  renta_mensual,
+  dias_reserva
+}) => {
+  const rentaMensual = Number(renta_mensual || 0);
+  const dias = Number(dias_reserva || 0);
+
+  if (rentaMensual <= 0 || dias <= 0) {
+    return {
+      cantidad: 0,
+      precio_unitario: 0,
+      importe: 0,
+      descripcion_calculo: 'Renta inválida'
+    };
+  }
+
+  /*
+    Regla:
+    - 30 días = mes completo.
+    - Menos de 30 días = proporcional diario.
+    - Más de 30 días = proporcional sobre base mensual / 30.
+  */
+  const precioUnitarioDiario = redondear2(rentaMensual / 30);
+  const importe = redondear2((rentaMensual / 30) * dias);
+
+  return {
+    cantidad: dias,
+    precio_unitario: precioUnitarioDiario,
+    importe,
+    descripcion_calculo: `${dias} día(s) x ${precioUnitarioDiario}`
+  };
+};
+
+const calcularLineaConceptoReserva = ({
+  concepto,
+  dias_reserva
+}) => {
+  const monto = redondear2(concepto.monto_default);
+
+  const metodoCalculo = String(concepto.metodo_calculo || '')
+    .trim()
+    .toUpperCase();
+
+  /*
+    MANUAL sí debe aparecer, incluso con monto 0,
+    porque el gestor puede editarlo antes de generar la boleta.
+  */
+  if (monto <= 0 && metodoCalculo !== 'MANUAL') {
+    return null;
+  }
+
+  switch (metodoCalculo) {
+    case 'POR_DIA': {
+      return {
+        cantidad: dias_reserva,
+        precio_unitario: monto,
+        importe: redondear2(monto * dias_reserva)
+      };
+    }
+
+    case 'POR_MES': {
+      if (concepto.prorrateable) {
+        return {
+          cantidad: redondear2(dias_reserva / 30),
+          precio_unitario: monto,
+          importe: redondear2((monto / 30) * dias_reserva)
+        };
+      }
+
+      const meses = Math.max(Math.ceil(dias_reserva / 30), 1);
+
+      return {
+        cantidad: meses,
+        precio_unitario: monto,
+        importe: redondear2(monto * meses)
+      };
+    }
+
+    case 'MONTO_FIJO': {
+      return {
+        cantidad: 1,
+        precio_unitario: monto,
+        importe: monto
+      };
+    }
+
+    case 'MANUAL': {
+      return {
+        cantidad: 1,
+        precio_unitario: monto,
+        importe: monto
+      };
+    }
+
+    default: {
+      return {
+        cantidad: 1,
+        precio_unitario: monto,
+        importe: monto
+      };
+    }
+  }
+};
+
 const calcularFechaVencimientoReserva = (fechaInicio, fechaEmision = new Date()) => {
   const inicioTexto = obtenerFechaYYYYMMDD(fechaInicio);
   const emisionTexto = obtenerFechaYYYYMMDD(fechaEmision);
@@ -221,7 +325,8 @@ const obtenerConceptosActivosParaReserva = async ({
         categoria,
         metodo_calculo,
         aplica_en,
-        aplica_desde_dias
+        aplica_desde_dias,
+        prorrateable
       FROM finance.ConceptoCobro
       WHERE activo = 1
         AND deleted_at IS NULL
@@ -231,7 +336,10 @@ const obtenerConceptosActivosParaReserva = async ({
             codigo <> 'RENTA_RESERVA'
             AND aplica_en IN ('RESERVA', 'AMBOS')
             AND aplica_desde_dias <= @dias_reserva
-            AND monto_default > 0
+           AND (
+  monto_default > 0
+  OR metodo_calculo = 'MANUAL'
+)
           )
         )
       ORDER BY
@@ -261,13 +369,25 @@ const construirLineasRecibo = ({
     };
   }
 
-  const montoRenta = redondear2(
-    Number(reserva.monto_total_estimado || 0) > 0
-      ? reserva.monto_total_estimado
-      : reserva.renta_pactada_mensual
+  const rentaMensual = Number(
+    reserva.renta_pactada_mensual || 0
   );
 
-  if (montoRenta <= 0) {
+  if (rentaMensual <= 0) {
+    return {
+      ok: false,
+      codigo: 'RENTA_INVALIDA',
+      mensaje:
+        'La reserva no tiene una renta mensual válida para generar el recibo.'
+    };
+  }
+
+  const calculoRenta = calcularRentaReserva({
+    renta_mensual: rentaMensual,
+    dias_reserva
+  });
+
+  if (calculoRenta.importe <= 0) {
     return {
       ok: false,
       codigo: 'RENTA_INVALIDA',
@@ -282,9 +402,9 @@ const construirLineasRecibo = ({
     concepto_cobro_id: conceptoRenta.concepto_cobro_id,
     codigo: conceptoRenta.codigo,
     descripcion: `Renta de reserva (${dias_reserva} día(s))`,
-    cantidad: 1,
-    precio_unitario: montoRenta,
-    importe: montoRenta,
+    cantidad: calculoRenta.cantidad,
+    precio_unitario: calculoRenta.precio_unitario,
+    importe: calculoRenta.importe,
     aplica_igv: Boolean(conceptoRenta.aplica_igv),
     orden_impresion: 1
   });
@@ -292,24 +412,29 @@ const construirLineasRecibo = ({
   conceptos
     .filter((concepto) => concepto.codigo !== 'RENTA_RESERVA')
     .forEach((concepto, index) => {
-      const monto = redondear2(concepto.monto_default);
+      const calculoConcepto = calcularLineaConceptoReserva({
+        concepto,
+        dias_reserva
+      });
 
-      if (monto <= 0) return;
+      if (!calculoConcepto) return;
 
       lineas.push({
         concepto_cobro_id: concepto.concepto_cobro_id,
         codigo: concepto.codigo,
         descripcion: concepto.nombre,
-        cantidad: 1,
-        precio_unitario: monto,
-        importe: monto,
+        cantidad: calculoConcepto.cantidad,
+        precio_unitario: calculoConcepto.precio_unitario,
+        importe: calculoConcepto.importe,
         aplica_igv: Boolean(concepto.aplica_igv),
         orden_impresion: index + 2
       });
     });
 
   const subtotal = redondear2(
-    lineas.reduce((total, linea) => total + Number(linea.importe || 0), 0)
+    lineas.reduce((total, linea) => {
+      return total + Number(linea.importe || 0);
+    }, 0)
   );
 
   const igv_total = redondear2(
@@ -329,6 +454,110 @@ const construirLineasRecibo = ({
     igv_total,
     total
   };
+};
+
+const recalcularTotalesLineas = (lineas) => {
+  const subtotal = redondear2(
+    lineas.reduce((total, linea) => {
+      return total + Number(linea.importe || 0);
+    }, 0)
+  );
+
+  const igv_total = redondear2(
+    lineas.reduce((total, linea) => {
+      if (!linea.aplica_igv) return total;
+
+      return total + Number(linea.importe || 0) * IGV_PORCENTAJE;
+    }, 0)
+  );
+
+  const total = redondear2(subtotal + igv_total);
+
+  return {
+    ok: true,
+    lineas,
+    subtotal,
+    igv_total,
+    total
+  };
+};
+
+const aplicarConceptosEditados = ({
+  calculo,
+  conceptos_editados
+}) => {
+  if (
+    !Array.isArray(conceptos_editados) ||
+    conceptos_editados.length === 0
+  ) {
+    return calculo;
+  }
+
+  const editadosPorConcepto = new Map();
+
+  conceptos_editados.forEach((item) => {
+    const conceptoId = Number(item.concepto_cobro_id);
+
+    if (!Number.isInteger(conceptoId) || conceptoId <= 0) {
+      return;
+    }
+
+    editadosPorConcepto.set(conceptoId, item);
+  });
+
+  const lineasActualizadas = calculo.lineas.map((linea) => {
+    /*
+      La renta no se debe editar manualmente.
+      La renta siempre se calcula según los días de la reserva.
+    */
+    if (linea.codigo === 'RENTA_RESERVA') {
+      return linea;
+    }
+
+    const editado = editadosPorConcepto.get(
+      Number(linea.concepto_cobro_id)
+    );
+
+    if (!editado) {
+      return linea;
+    }
+
+    const cantidad = redondear2(editado.cantidad);
+    const precioUnitario = redondear2(editado.precio_unitario);
+
+    if (cantidad <= 0 || precioUnitario < 0) {
+      return linea;
+    }
+
+    const importe = redondear2(cantidad * precioUnitario);
+
+    return {
+      ...linea,
+      cantidad,
+      precio_unitario: precioUnitario,
+      importe
+    };
+  });
+
+  return recalcularTotalesLineas(lineasActualizadas);
+};
+
+const filtrarLineasConImporteParaEmision = (calculo) => {
+  const lineasFiltradas = calculo.lineas.filter((linea) => {
+    const importe = Number(linea.importe || 0);
+
+    /*
+      La renta nunca debería ser 0, pero por seguridad
+      se mantiene si es RENTA_RESERVA.
+    */
+    if (linea.codigo === 'RENTA_RESERVA') {
+      return true;
+    }
+
+    return importe > 0;
+  });
+
+  return recalcularTotalesLineas(lineasFiltradas);
 };
 
 const obtenerReciboCompletoPorId = async (recibo_id) => {
@@ -578,7 +807,8 @@ const obtenerVistaPreviaReciboReservaGestion = async ({
 const generarReciboReservaGestion = async ({
   usuario_gestor_id,
   reserva_id,
-  observaciones = null
+  observaciones = null,
+  conceptos_editados = []
 }) => {
   const pool = await getConnection();
   const transaction = new sql.Transaction(pool);
@@ -668,21 +898,30 @@ const generarReciboReservaGestion = async ({
       dias_reserva: diasReserva
     });
 
-    const calculo = construirLineasRecibo({
-      reserva,
-      conceptos,
-      dias_reserva: diasReserva
-    });
+  const calculoBase = construirLineasRecibo({
+  reserva,
+  conceptos,
+  dias_reserva: diasReserva
+});
 
-    if (!calculo.ok) {
-      await transaction.rollback();
+if (!calculoBase.ok) {
+  await transaction.rollback();
 
-      return {
-        ok: false,
-        codigo: calculo.codigo,
-        mensaje: calculo.mensaje
-      };
-    }
+  return {
+    ok: false,
+    codigo: calculoBase.codigo,
+    mensaje: calculoBase.mensaje
+  };
+}
+
+const calculoConEditados = aplicarConceptosEditados({
+  calculo: calculoBase,
+  conceptos_editados
+});
+
+const calculo = filtrarLineasConImporteParaEmision(
+  calculoConEditados
+);
 
     const fechaVencimiento = calcularFechaVencimientoReserva(
   reserva.fecha_inicio

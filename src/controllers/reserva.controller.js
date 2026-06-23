@@ -27,7 +27,8 @@ const {
   aprobarSolicitudExtensionReservaGestion,
   rechazarSolicitudExtensionReservaGestion,
   obtenerReservaParaCancelacionInquilino,
-  cancelarReservaPorInquilino
+  cancelarReservaPorInquilino,
+  obtenerEstadoFinancieroReserva
 } = require('../models/reserva.model');
 
 const {
@@ -1796,51 +1797,76 @@ const rechazarSolicitudExtension = async (
     });
   }
 };
-
 const cancelarReservaInquilino = async (req, res) => {
   try {
     const empresa_id = req.usuario.empresa_id;
     const usuario_id = req.usuario.usuario_id;
-    const reserva_id = Number(req.params.reserva_id);
 
-    const { motivo } = req.body;
+    const reserva_id = Number(
+      req.params.reserva_id || req.params.id
+    );
 
-    if (!reserva_id || Number.isNaN(reserva_id)) {
+    const { motivo } = req.body || {};
+
+    if (!Number.isInteger(reserva_id) || reserva_id <= 0) {
       return res.status(400).json({
         mensaje: 'El ID de la reserva no es válido'
       });
     }
 
     const reserva = await obtenerReservaParaCancelacionInquilino(
-  reserva_id,
-  usuario_id
-);
+      reserva_id,
+      usuario_id
+    );
 
     if (!reserva) {
       return res.status(404).json({
-        mensaje: 'No se encontró la reserva o no pertenece al inquilino autenticado'
+        mensaje:
+          'No se encontró la reserva o no pertenece al inquilino autenticado'
       });
     }
 
     const estadosCancelables = ['SOLICITADA', 'APROBADA'];
 
     if (!estadosCancelables.includes(reserva.estado_reserva)) {
-      return res.status(400).json({
-        mensaje: `La reserva no puede cancelarse porque se encuentra en estado ${reserva.estado_reserva}`
+      return res.status(409).json({
+        mensaje: `La reserva no puede cancelarse porque se encuentra en estado ${reserva.estado_reserva}`,
+        estado_actual: reserva.estado_reserva
+      });
+    }
+
+    const estadoFinanciero = await obtenerEstadoFinancieroReserva(
+      reserva_id
+    );
+
+    if (
+      estadoFinanciero &&
+      Number(estadoFinanciero.tiene_pago_confirmado) === 1
+    ) {
+      return res.status(409).json({
+        codigo: 'RESERVA_CON_RECIBO_PAGADO',
+        mensaje:
+          'La reserva ya tiene una boleta pagada. No puede cancelarse directamente. Debe solicitar revisión al administrador.',
+        recibo: {
+          recibo_id: estadoFinanciero.recibo_id,
+          estado_recibo: estadoFinanciero.estado_recibo,
+          total: estadoFinanciero.total,
+          saldo_pendiente: estadoFinanciero.saldo_pendiente
+        }
       });
     }
 
     const reservaCancelada = await cancelarReservaPorInquilino({
-  reserva_id,
-  usuario_id,
-  motivo: motivo?.trim() || null
-});
+      reserva_id,
+      usuario_id,
+      motivo: motivo?.trim() || null
+    });
 
     let notificacionCreada = null;
 
-        if (reserva.anfitrion_usuario_id) {
+    if (reserva.anfitrion_usuario_id) {
       notificacionCreada = await crearNotificacion({
-        empresa_id: reserva.empresa_id,
+        empresa_id,
         usuario_origen_id: usuario_id,
         usuario_destino_id: reserva.anfitrion_usuario_id,
         tipo_notificacion: 'RESERVA_CANCELADA_INQUILINO',
@@ -1856,7 +1882,6 @@ const cancelarReservaInquilino = async (req, res) => {
       reserva: reservaCancelada,
       notificacion: notificacionCreada
     });
-
   } catch (error) {
     console.error('Error al cancelar reserva:', error);
 
@@ -1866,8 +1891,6 @@ const cancelarReservaInquilino = async (req, res) => {
     });
   }
 };
-
-
 module.exports = {
   solicitarReserva,
   obtenerMisSolicitudesReserva,

@@ -4,6 +4,7 @@ const listarRecibosPendientesInquilino = async (empresa_id, usuario_id) => {
   const pool = await getConnection();
 
   const result = await pool.request()
+    
     .input('usuario_id', sql.Int, usuario_id)
     .query(`
       SELECT
@@ -43,7 +44,10 @@ const listarRecibosPendientesInquilino = async (empresa_id, usuario_id) => {
       LEFT JOIN core.PerfilUsuario pu
         ON pu.usuario_id = res.inquilino_id
       WHERE res.inquilino_id = @usuario_id
+        
+        AND res.estado_reserva <> 'CANCELADA'
         AND r.estado_recibo IN ('EMITIDO', 'PARCIAL', 'VENCIDO')
+        AND r.estado_recibo <> 'ANULADO'
         AND r.saldo_pendiente > 0
       ORDER BY r.fecha_vencimiento ASC, r.recibo_id DESC;
     `);

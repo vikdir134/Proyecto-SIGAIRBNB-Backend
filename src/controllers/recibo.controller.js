@@ -88,107 +88,88 @@ const previsualizarReciboReserva = async (req, res) => {
 
 const generarReciboReserva = async (req, res) => {
   try {
-    const usuario_gestor_id = Number(req.usuario?.usuario_id);
+    const usuario_gestor_id = req.usuario.usuario_id;
     const reserva_id = Number(req.params.reserva_id);
-    const { observaciones } = req.body || {};
 
-    if (
-      !Number.isInteger(usuario_gestor_id) ||
-      usuario_gestor_id <= 0
-    ) {
-      return res.status(401).json({
-        mensaje: 'Usuario autenticado no válido'
-      });
-    }
+    const {
+      observaciones,
+      conceptos_editados
+    } = req.body || {};
 
-    if (
-      !Number.isInteger(reserva_id) ||
-      reserva_id <= 0
-    ) {
+    if (!Number.isInteger(reserva_id) || reserva_id <= 0) {
       return res.status(400).json({
-        mensaje: 'El identificador de la reserva no es válido'
+        mensaje: 'El identificador de la reserva no es válido.'
       });
     }
 
     const resultado = await generarReciboReservaGestion({
       usuario_gestor_id,
       reserva_id,
-      observaciones
+      observaciones,
+      conceptos_editados: Array.isArray(conceptos_editados)
+        ? conceptos_editados
+        : []
     });
 
     if (!resultado.ok) {
-      const estadosPorCodigo = {
-        RESERVA_NO_ENCONTRADA: 404,
-        ESTADO_NO_PERMITIDO: 409,
-        RECIBO_EXISTENTE: 409,
-        RECIBO_PERIODO_EXISTENTE: 409,
-        CONCEPTO_RENTA_NO_CONFIGURADO: 409,
-        RENTA_INVALIDA: 409
-      };
+      if (resultado.codigo === 'RESERVA_NO_ENCONTRADA') {
+        return res.status(404).json({
+          mensaje: resultado.mensaje
+        });
+      }
 
-      return res
-        .status(estadosPorCodigo[resultado.codigo] || 400)
-        .json({
+      if (resultado.codigo === 'ESTADO_NO_PERMITIDO') {
+        return res.status(409).json({
           mensaje: resultado.mensaje,
-          codigo: resultado.codigo,
-          estado_actual: resultado.estado_actual,
+          estado_actual: resultado.estado_actual
+        });
+      }
+
+      if (resultado.codigo === 'RECIBO_EXISTENTE') {
+        return res.status(409).json({
+          mensaje: resultado.mensaje,
           recibo: resultado.recibo,
           detalles: resultado.detalles
         });
+      }
+
+      if (resultado.codigo === 'CONCEPTO_RENTA_NO_CONFIGURADO') {
+        return res.status(400).json({
+          mensaje: resultado.mensaje
+        });
+      }
+
+      if (resultado.codigo === 'RENTA_INVALIDA') {
+        return res.status(400).json({
+          mensaje: resultado.mensaje
+        });
+      }
+
+      return res.status(400).json({
+        mensaje: resultado.mensaje || 'No se pudo generar la boleta digital.'
+      });
     }
 
-    let notificacion = null;
-    let advertencia_notificacion = null;
-
-   try {
-  console.log('Creando notificación de recibo para inquilino:', {
-    empresa_id: resultado.reserva.empresa_id,
-    usuario_origen_id: usuario_gestor_id,
-    usuario_destino_id: resultado.reserva.inquilino_id,
-    recibo_id: resultado.recibo.recibo_id
-  });
-
-  notificacion = await crearNotificacion({
-    empresa_id: resultado.reserva.empresa_id,
-    usuario_origen_id: usuario_gestor_id,
-    usuario_destino_id: resultado.reserva.inquilino_id,
-    tipo_notificacion: 'RECIBO_GENERADO',
-    titulo: 'Boleta digital generada',
-    mensaje: `Se generó una boleta digital para tu reserva del inmueble ${resultado.reserva.nombre_inmueble || resultado.reserva.codigo_inmueble}.`,
-    referencia_tipo: 'RECIBO',
-    referencia_id: resultado.recibo.recibo_id
-  });
-
-  console.log('Notificación de recibo creada:', notificacion);
-} catch (errorNotificacion) {
-  console.error(
-    'El recibo fue generado, pero falló la notificación:',
-    errorNotificacion
-  );
-
-  advertencia_notificacion =
-    'El recibo fue generado, pero no se pudo crear la notificación al inquilino.';
-}
-
-   return res.status(201).json({
-  mensaje: advertencia_notificacion
-    ? 'Boleta generada, pero no se pudo notificar al inquilino'
-    : 'Boleta digital generada correctamente',
-  recibo: resultado.recibo,
-  detalles: resultado.detalles,
-  notificacion,
-  advertencia_notificacion
-});
+    return res.status(201).json({
+      mensaje: 'Boleta digital generada correctamente.',
+      recibo: resultado.recibo,
+      detalles: resultado.detalles
+    });
   } catch (error) {
     console.error('Error al generar recibo de reserva:', error);
 
+    if (error.message === 'FECHA_VENCIMIENTO_RESERVA_EXPIRADA') {
+      return res.status(400).json({
+        mensaje:
+          'No se puede generar la boleta porque la fecha de vencimiento ya expiró.'
+      });
+    }
+
     return res.status(500).json({
-      mensaje: 'Ocurrió un error al generar la boleta digital',
-      error: error.message
+      mensaje: 'Ocurrió un error al generar la boleta digital.'
     });
   }
 };
-
 const obtenerRecibosReserva = async (req, res) => {
   try {
     const usuario_id = Number(req.usuario?.usuario_id);

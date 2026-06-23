@@ -2598,45 +2598,80 @@ const cancelarReservaPorInquilino = async ({
           AND inquilino_id = @usuario_id;
       `);
 
-    const reservaCancelada = updateReserva.recordset[0];
-
-    if (!reservaCancelada) {
+    if (updateReserva.recordset.length === 0) {
       await transaction.rollback();
       return null;
     }
 
-    const descripcion = motivo
-      ? `El inquilino canceló la reserva. Motivo: ${motivo}`
-      : 'El inquilino canceló la reserva.';
-
     await new sql.Request(transaction)
       .input('reserva_id', sql.Int, reserva_id)
-      .input('usuario_id', sql.Int, usuario_id)
-      .input('tipo_evento', sql.NVarChar(30), 'CANCELACION')
-      .input('descripcion', sql.NVarChar(500), descripcion)
       .query(`
-        INSERT INTO booking.ReservaEvento (
-          reserva_id,
-          usuario_id,
-          tipo_evento,
-          descripcion
-        )
-        VALUES (
-          @reserva_id,
-          @usuario_id,
-          @tipo_evento,
-          @descripcion
-        );
+        UPDATE finance.Recibo
+        SET
+          estado_recibo = 'ANULADO',
+          saldo_pendiente = 0,
+          observaciones = CONCAT(
+            ISNULL(observaciones, ''),
+            CASE 
+              WHEN observaciones IS NULL OR observaciones = '' 
+              THEN '' 
+              ELSE ' | ' 
+            END,
+            'Recibo anulado automáticamente por cancelación de reserva.'
+          ),
+          updated_at = SYSUTCDATETIME()
+        WHERE reserva_id = @reserva_id
+          AND estado_recibo IN ('EMITIDO', 'VENCIDO')
+          AND ISNULL(saldo_pendiente, 0) > 0;
       `);
 
     await transaction.commit();
 
-    return reservaCancelada;
+    return updateReserva.recordset[0];
   } catch (error) {
     await transaction.rollback();
     throw error;
   }
 };
+
+const obtenerEstadoFinancieroReserva = async (input) => {
+  const reserva_id = Number(
+    typeof input === 'object'
+      ? input?.reserva_id
+      : input
+  );
+
+  if (!Number.isInteger(reserva_id) || reserva_id <= 0) {
+    throw new Error('RESERVA_ID_INVALIDO_FINANZAS');
+  }
+
+  const pool = await getConnection();
+
+  const result = await pool.request()
+    .input('reserva_id', sql.Int, reserva_id)
+    .query(`
+      SELECT TOP 1
+        r.recibo_id,
+        r.estado_recibo,
+        r.total,
+        r.saldo_pendiente,
+
+        CASE
+          WHEN r.estado_recibo = 'PAGADO'
+            OR ISNULL(r.saldo_pendiente, 0) <= 0
+          THEN 1
+          ELSE 0
+        END AS tiene_pago_confirmado
+
+      FROM finance.Recibo r
+      WHERE r.reserva_id = @reserva_id
+        AND r.estado_recibo <> 'ANULADO'
+      ORDER BY r.recibo_id DESC;
+    `);
+
+  return result.recordset[0] || null;
+};
+
 module.exports = {
   obtenerPublicacionReservablePorId,
   buscarConflictosReserva,
@@ -2666,5 +2701,6 @@ module.exports = {
   aprobarSolicitudExtensionReservaGestion,
   rechazarSolicitudExtensionReservaGestion,
   obtenerReservaParaCancelacionInquilino,
-  cancelarReservaPorInquilino
+  cancelarReservaPorInquilino,
+  obtenerEstadoFinancieroReserva
 };
