@@ -14,8 +14,10 @@ const {
   eliminarPublicacionPorId
 } = require('../models/publicacion.model');
 
-const fs = require('fs');
-const path = require('path');
+const {
+  subirImagenACloudinary,
+  eliminarImagenCloudinary
+} = require('../services/cloudinary.service');
 
 const limpiarTexto = (valor) => {
   if (valor === undefined || valor === null) return '';
@@ -36,7 +38,6 @@ const validarFecha = (fecha) => {
   return !Number.isNaN(fechaDate.getTime());
 };
 
-
 const convertirBooleano = (valor, valorPorDefecto = false) => {
   if (valor === undefined || valor === null) {
     return valorPorDefecto;
@@ -51,6 +52,30 @@ const convertirBooleano = (valor, valorPorDefecto = false) => {
   }
 
   return valorPorDefecto;
+};
+
+const obtenerPublicIdFoto = (foto) => {
+  if (!foto) return null;
+
+  return (
+    foto.public_id_cloudinary ||
+    foto.public_id ||
+    foto.nombre_archivo ||
+    null
+  );
+};
+
+const eliminarArchivoFotoCloudinary = async (foto) => {
+  try {
+    const publicId = obtenerPublicIdFoto(foto);
+
+    if (!publicId) return;
+
+    await eliminarImagenCloudinary(publicId);
+
+  } catch (error) {
+    console.error('No se pudo eliminar la imagen de Cloudinary:', error.message);
+  }
 };
 
 const listarPublicacionesPublicas = async (req, res) => {
@@ -204,6 +229,8 @@ const obtenerDetallePublicacion = async (req, res) => {
 };
 
 const subirFotoPublicacion = async (req, res) => {
+  let imagenCloudinary = null;
+
   try {
     const empresaId = req.usuario.empresa_id;
     const { publicacion_id } = req.params;
@@ -228,10 +255,6 @@ const subirFotoPublicacion = async (req, res) => {
     );
 
     if (!publicacion) {
-      if (req.file?.path) {
-        fs.unlinkSync(req.file.path);
-      }
-
       return res.status(404).json({
         mensaje: 'La publicación no existe o no pertenece a tu empresa'
       });
@@ -242,10 +265,6 @@ const subirFotoPublicacion = async (req, res) => {
       : 1;
 
     if (Number.isNaN(ordenVisual) || ordenVisual <= 0) {
-      if (req.file?.path) {
-        fs.unlinkSync(req.file.path);
-      }
-
       return res.status(400).json({
         mensaje: 'El orden visual debe ser mayor a 0'
       });
@@ -256,12 +275,24 @@ const subirFotoPublicacion = async (req, res) => {
       req.body.es_principal === 'true' ||
       req.body.es_principal === '1';
 
-    const urlFoto = `${req.protocol}://${req.get('host')}/uploads/inmuebles/${req.file.filename}`;
+    imagenCloudinary = await subirImagenACloudinary(
+      req.file,
+      `sigairbnb/empresa_${empresaId}/publicaciones`
+    );
 
     const fotoRegistrada = await registrarFotoPublicacion({
       publicacion_id: publicacionIdNumero,
-      url_foto: urlFoto,
-      nombre_archivo: req.file.filename,
+
+      // Ahora se guarda la URL pública de Cloudinary.
+      url_foto: imagenCloudinary.url,
+
+      // Se guarda también en nombre_archivo para compatibilidad con el model actual.
+      // Ya no será un nombre de archivo local, sino el public_id de Cloudinary.
+      nombre_archivo: imagenCloudinary.public_id,
+
+      // Si actualizas el model, esta columna nueva también se puede registrar.
+      public_id_cloudinary: imagenCloudinary.public_id,
+
       orden_visual: ordenVisual,
       es_principal: esPrincipal
     });
@@ -282,11 +313,14 @@ const subirFotoPublicacion = async (req, res) => {
   } catch (error) {
     console.error('Error al subir foto de publicación:', error);
 
-    if (req.file?.path) {
+    if (imagenCloudinary?.public_id) {
       try {
-        fs.unlinkSync(req.file.path);
+        await eliminarImagenCloudinary(imagenCloudinary.public_id);
       } catch (deleteError) {
-        console.error('No se pudo eliminar la imagen luego del error:', deleteError.message);
+        console.error(
+          'No se pudo eliminar la imagen de Cloudinary luego del error:',
+          deleteError.message
+        );
       }
     }
 
@@ -510,36 +544,6 @@ const publicarPublicacionGestion = async (req, res) => {
   }
 };
 
-const eliminarArchivoFotoLocal = (urlFoto) => {
-  try {
-    if (!urlFoto) return;
-
-    const marcador = '/uploads/inmuebles/';
-    const indice = urlFoto.indexOf(marcador);
-
-    if (indice === -1) return;
-
-    const nombreArchivo = urlFoto.substring(indice + marcador.length);
-
-    if (!nombreArchivo) return;
-
-    const rutaArchivo = path.join(
-      __dirname,
-      '..',
-      '..',
-      'uploads',
-      'inmuebles',
-      nombreArchivo
-    );
-
-    if (fs.existsSync(rutaArchivo)) {
-      fs.unlinkSync(rutaArchivo);
-    }
-  } catch (error) {
-    console.error('No se pudo eliminar archivo local:', error.message);
-  }
-};
-
 const eliminarBorradorPublicacionGestion = async (req, res) => {
   try {
     const empresaId = req.usuario.empresa_id;
@@ -581,9 +585,11 @@ const eliminarBorradorPublicacionGestion = async (req, res) => {
       });
     }
 
-    resultado.fotos_eliminadas.forEach((foto) => {
-      eliminarArchivoFotoLocal(foto.url_foto);
-    });
+    await Promise.all(
+      resultado.fotos_eliminadas.map((foto) =>
+        eliminarArchivoFotoCloudinary(foto)
+      )
+    );
 
     return res.json({
       mensaje: 'Borrador de publicación eliminado correctamente',
@@ -636,9 +642,11 @@ const eliminarPublicacionGestion = async (req, res) => {
       });
     }
 
-    resultado.fotos_eliminadas.forEach((foto) => {
-      eliminarArchivoFotoLocal(foto.url_foto);
-    });
+    await Promise.all(
+      resultado.fotos_eliminadas.map((foto) =>
+        eliminarArchivoFotoCloudinary(foto)
+      )
+    );
 
     return res.json({
       mensaje: 'Publicación eliminada correctamente',
@@ -664,5 +672,5 @@ module.exports = {
   subirFotoPublicacion,
   publicarPublicacionGestion,
   eliminarBorradorPublicacionGestion,
-eliminarPublicacionGestion
+  eliminarPublicacionGestion
 };

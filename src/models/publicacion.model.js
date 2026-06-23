@@ -219,6 +219,7 @@ const obtenerFotosPublicacion = async (publicacion_id) => {
         publicacion_id,
         url_foto,
         nombre_archivo,
+        public_id_cloudinary,
         orden_visual,
         es_principal,
         created_at
@@ -460,6 +461,7 @@ const registrarFotoPublicacion = async ({
   publicacion_id,
   url_foto,
   nombre_archivo,
+  public_id_cloudinary,
   orden_visual,
   es_principal
 }) => {
@@ -487,6 +489,7 @@ const registrarFotoPublicacion = async ({
       .input('publicacion_id', sql.Int, publicacion_id)
       .input('url_foto', sql.NVarChar(500), url_foto)
       .input('nombre_archivo', sql.NVarChar(255), nombre_archivo)
+      .input('public_id_cloudinary', sql.NVarChar(255), public_id_cloudinary || null)
       .input('orden_visual', sql.Int, orden_visual)
       .input('es_principal', sql.Bit, es_principal)
       .query(`
@@ -494,6 +497,7 @@ const registrarFotoPublicacion = async ({
           publicacion_id,
           url_foto,
           nombre_archivo,
+          public_id_cloudinary,
           orden_visual,
           es_principal
         )
@@ -502,6 +506,7 @@ const registrarFotoPublicacion = async ({
           INSERTED.publicacion_id,
           INSERTED.url_foto,
           INSERTED.nombre_archivo,
+          INSERTED.public_id_cloudinary,
           INSERTED.orden_visual,
           INSERTED.es_principal,
           INSERTED.created_at
@@ -509,6 +514,7 @@ const registrarFotoPublicacion = async ({
           @publicacion_id,
           @url_foto,
           @nombre_archivo,
+          @public_id_cloudinary,
           @orden_visual,
           @es_principal
         );
@@ -572,8 +578,6 @@ const publicarPublicacionPorId = async (empresa_id, publicacion_id) => {
   return result.recordset[0];
 };
 
-
-
 const eliminarBorradorPublicacionPorId = async (empresa_id, publicacion_id) => {
   const pool = await getConnection();
   const transaction = new sql.Transaction(pool);
@@ -590,7 +594,8 @@ const eliminarBorradorPublicacionPorId = async (empresa_id, publicacion_id) => {
         SELECT
           f.inmueble_foto_id,
           f.url_foto,
-          f.nombre_archivo
+          f.nombre_archivo,
+          f.public_id_cloudinary
         FROM catalog.InmuebleFoto f
         INNER JOIN catalog.Publicacion p
           ON p.publicacion_id = f.publicacion_id
@@ -667,7 +672,8 @@ const eliminarPublicacionPorId = async (empresa_id, publicacion_id) => {
         SELECT
           f.inmueble_foto_id,
           f.url_foto,
-          f.nombre_archivo
+          f.nombre_archivo,
+          f.public_id_cloudinary
         FROM catalog.InmuebleFoto f
         INNER JOIN catalog.Publicacion p
           ON p.publicacion_id = f.publicacion_id
@@ -724,7 +730,6 @@ const eliminarPublicacionPorId = async (empresa_id, publicacion_id) => {
     throw error;
   }
 };
-
 
 module.exports = {
   listarPublicaciones,
