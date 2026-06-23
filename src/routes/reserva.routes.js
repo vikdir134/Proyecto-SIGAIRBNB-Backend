@@ -35,7 +35,11 @@ router.get(
   obtenerMisSolicitudesReserva
 );
 
-router.patch('/:reserva_id/cancelar', verificarToken, cancelarReservaInquilino);
+router.patch(
+  '/:reserva_id/cancelar',
+  verificarToken,
+  cancelarReservaInquilino
+);
 
 router.post(
   '/solicitudes',
@@ -69,47 +73,48 @@ router.get(
 
 /*
   HU10 y HU11
-  Solo ADMIN puede evaluar, aprobar o rechazar.
+  ADMIN y SECRETARIO pueden revisar vetting, evaluar,
+  aprobar o rechazar solicitudes.
 */
 router.get(
   '/gestion/vetting/resumen',
   verificarToken,
-  autorizarRoles('ADMIN'),
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   obtenerResumenVettingGestion
 );
 
 router.get(
   '/gestion/solicitudes/:reserva_id/vetting',
   verificarToken,
-  autorizarRoles('ADMIN'),
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   obtenerVettingInquilinoGestion
 );
 
 router.get(
   '/gestion/solicitudes/:reserva_id/evaluaciones',
   verificarToken,
-  autorizarRoles('ADMIN'),
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   obtenerEvaluacionesInquilinoGestion
 );
 
 router.post(
   '/gestion/solicitudes/:reserva_id/evaluacion',
   verificarToken,
-  autorizarRoles('ADMIN'),
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   registrarEvaluacionInquilinoGestion
 );
 
 router.patch(
   '/gestion/solicitudes/:reserva_id/aprobar',
   verificarToken,
-  autorizarRoles('ADMIN'),
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   aprobarSolicitudReserva
 );
 
 router.patch(
   '/gestion/solicitudes/:reserva_id/rechazar',
   verificarToken,
-  autorizarRoles('ADMIN'),
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   rechazarSolicitudReserva
 );
 
@@ -143,21 +148,25 @@ router.post(
 );
 
 /*
-   Aprobar solicitud de extensión
-  Disponible para el publicador o secretario asignado.
+  Aprobar solicitud de extensión
+  Disponible para ADMIN o SECRETARIO.
 */
 router.put(
   '/gestion/extensiones/:solicitud_extension_id/aprobar',
   verificarToken,
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   aprobarSolicitudExtension
 );
 
 /*
-   Rechazar solicitud de extensión
+  Rechazar solicitud de extensión
+  Disponible para ADMIN o SECRETARIO.
 */
 router.put(
   '/gestion/extensiones/:solicitud_extension_id/rechazar',
   verificarToken,
+  autorizarRoles('ADMIN', 'SECRETARIO'),
   rechazarSolicitudExtension
 );
+
 module.exports = router;

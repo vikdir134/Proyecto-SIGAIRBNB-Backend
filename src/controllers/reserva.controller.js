@@ -1,3 +1,5 @@
+//reservaController
+
 const {
   obtenerPublicacionReservablePorId,
   buscarConflictosReserva,
@@ -457,53 +459,8 @@ const obtenerSolicitudesGestion = async (req, res) => {
 
     const { estado_reserva, estado_vetting } = req.query;
 
-    const rolesUsuario = Array.isArray(req.usuario.roles)
-      ? req.usuario.roles
-      : [];
-
-    const esAdmin = rolesUsuario.includes('ADMIN');
-    const esSecretario = rolesUsuario.includes('SECRETARIO');
-
     let estadoNormalizado = limpiarTexto(estado_reserva).toUpperCase();
     let estadoVettingNormalizado = limpiarTexto(estado_vetting).toUpperCase();
-
-    /*
-      El secretario solamente controla el ciclo de ocupación.
-      No puede consultar solicitudes pendientes, rechazadas,
-      canceladas o expiradas.
-    */
-    if (esSecretario && !esAdmin) {
-      const estadosPermitidosSecretario = [
-        'APROBADA',
-        'ACTIVA',
-        'FINALIZADA'
-      ];
-
-      if (
-        estadoNormalizado &&
-        !estadosPermitidosSecretario.includes(estadoNormalizado)
-      ) {
-        return res.status(403).json({
-          mensaje: 'El secretario solo puede consultar reservas aprobadas, activas o finalizadas',
-          estados_permitidos: estadosPermitidosSecretario
-        });
-      }
-
-      if (estadoVettingNormalizado) {
-        return res.status(403).json({
-          mensaje: 'El secretario no tiene permisos para consultar información de vetting'
-        });
-      }
-
-      /*
-        Si no envía filtro, comenzará viendo las aprobadas.
-      */
-      if (!estadoNormalizado) {
-        estadoNormalizado = 'APROBADA';
-      }
-
-      estadoVettingNormalizado = '';
-    }
 
     const estadosPermitidos = [
       'SOLICITADA',
@@ -595,7 +552,6 @@ const obtenerSolicitudesGestion = async (req, res) => {
     });
   }
 };
-
 const aprobarSolicitudReserva = async (req, res) => {
   try {
     const usuarioPublicadorId = req.usuario.usuario_id;

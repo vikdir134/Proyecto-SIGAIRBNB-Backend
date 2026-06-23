@@ -1,3 +1,5 @@
+//reserva.model
+
 const { getConnection, sql } = require('../config/db');
 
 const obtenerPublicacionReservablePorId = async (publicacion_id) => {
@@ -547,11 +549,21 @@ const aprobarSolicitudReservaPorId = async ({
         INNER JOIN catalog.Publicacion p
           ON p.inmueble_id = i.inmueble_id
         WHERE r.reserva_id = @reserva_id
-          AND p.publicado_por_usuario_id = @usuario_publicador_id
+          AND (
+            p.publicado_por_usuario_id = @usuario_publicador_id
+
+            OR EXISTS (
+              SELECT 1
+              FROM core.EmpresaSecretario es
+              WHERE es.empresa_id = i.empresa_id
+                AND es.secretario_usuario_id = @usuario_publicador_id
+                AND es.activo = 1
+            )
+          )
           AND r.estado_reserva = 'SOLICITADA'
           AND i.activo = 1
           AND i.deleted_at IS NULL;
-              `);
+      `);
 
     const reservaAprobada = reservaResult.recordset[0];
 
@@ -591,7 +603,6 @@ const aprobarSolicitudReservaPorId = async ({
     throw error;
   }
 };
-
 const rechazarSolicitudReservaPorId = async ({
   usuario_publicador_id,
   empresa_id,
@@ -640,15 +651,25 @@ const rechazarSolicitudReservaPorId = async ({
           INSERTED.gestionado_por_usuario_id,
           INSERTED.updated_at
         FROM booking.Reserva r
-          INNER JOIN catalog.Inmueble i
-            ON i.inmueble_id = r.inmueble_id
-          INNER JOIN catalog.Publicacion p
-            ON p.inmueble_id = i.inmueble_id
-          WHERE r.reserva_id = @reserva_id
-            AND p.publicado_por_usuario_id = @usuario_publicador_id
-            AND r.estado_reserva = 'SOLICITADA'
-            AND i.activo = 1
-            AND i.deleted_at IS NULL;
+        INNER JOIN catalog.Inmueble i
+          ON i.inmueble_id = r.inmueble_id
+        INNER JOIN catalog.Publicacion p
+          ON p.inmueble_id = i.inmueble_id
+        WHERE r.reserva_id = @reserva_id
+          AND (
+            p.publicado_por_usuario_id = @usuario_publicador_id
+
+            OR EXISTS (
+              SELECT 1
+              FROM core.EmpresaSecretario es
+              WHERE es.empresa_id = i.empresa_id
+                AND es.secretario_usuario_id = @usuario_publicador_id
+                AND es.activo = 1
+            )
+          )
+          AND r.estado_reserva = 'SOLICITADA'
+          AND i.activo = 1
+          AND i.deleted_at IS NULL;
       `);
 
     const reservaRechazada = reservaResult.recordset[0];
@@ -912,7 +933,17 @@ const obtenerVettingInquilinoReservaGestion = async (usuario_publicador_id, rese
       LEFT JOIN core.PerfilUsuario pu
         ON pu.usuario_id = r.inquilino_id
       WHERE r.reserva_id = @reserva_id
-        AND p.publicado_por_usuario_id = @usuario_publicador_id
+        AND (
+          p.publicado_por_usuario_id = @usuario_publicador_id
+
+          OR EXISTS (
+            SELECT 1
+            FROM core.EmpresaSecretario es
+            WHERE es.empresa_id = i.empresa_id
+              AND es.secretario_usuario_id = @usuario_publicador_id
+              AND es.activo = 1
+          )
+        )
         AND i.activo = 1
         AND i.deleted_at IS NULL;
     `);
@@ -1145,7 +1176,17 @@ const listarEvaluacionesInquilinoReservaGestion = async (
       LEFT JOIN core.PerfilUsuario pu
         ON pu.usuario_id = ei.evaluado_por_usuario_id
       WHERE ei.reserva_id = @reserva_id
-        AND p.publicado_por_usuario_id = @usuario_publicador_id
+        AND (
+          p.publicado_por_usuario_id = @usuario_publicador_id
+
+          OR EXISTS (
+            SELECT 1
+            FROM core.EmpresaSecretario es
+            WHERE es.empresa_id = i.empresa_id
+              AND es.secretario_usuario_id = @usuario_publicador_id
+              AND es.activo = 1
+          )
+        )
         AND i.activo = 1
         AND i.deleted_at IS NULL
       ORDER BY ei.fecha_evaluacion DESC;
