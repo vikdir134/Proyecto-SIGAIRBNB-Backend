@@ -112,8 +112,7 @@ const pagarReciboOnline = async (req, res) => {
     const metodosPermitidos = [
       'ONLINE',
       'TARJETA',
-      'TRANSFERENCIA',
-      'EFECTIVO'
+      'TRANSFERENCIA'
     ];
 
     if (!metodosPermitidos.includes(metodoPagoNormalizado)) {

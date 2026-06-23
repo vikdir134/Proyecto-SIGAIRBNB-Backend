@@ -170,8 +170,7 @@ const registrarPagoOnline = async ({
     const metodosPermitidos = [
       'ONLINE',
       'TARJETA',
-      'TRANSFERENCIA',
-      'EFECTIVO'
+      'TRANSFERENCIA'
     ];
 
     if (!metodosPermitidos.includes(metodoPagoNormalizado)) {
