@@ -39,19 +39,18 @@ const calcularDiasReserva = (fechaInicio, fechaFin) => {
   return Math.max(dias, 1);
 };
 
-const calcularFechaVencimientoReserva = (fechaInicio) => {
+const calcularFechaVencimientoReserva = (fechaInicio, fechaEmision = new Date()) => {
   const inicioTexto = obtenerFechaYYYYMMDD(fechaInicio);
+  const emisionTexto = obtenerFechaYYYYMMDD(fechaEmision);
 
   const inicio = new Date(`${inicioTexto}T00:00:00`);
+  const emision = new Date(`${emisionTexto}T00:00:00`);
 
   const fechaVencimiento = new Date(inicio);
   fechaVencimiento.setDate(fechaVencimiento.getDate() - 1);
 
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-
-  if (fechaVencimiento < hoy) {
-    return hoy;
+  if (fechaVencimiento < emision) {
+    throw new Error('FECHA_VENCIMIENTO_RESERVA_EXPIRADA');
   }
 
   return fechaVencimiento;
