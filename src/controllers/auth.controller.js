@@ -20,6 +20,13 @@ const {
   enviarCorreoRecuperacionPassword
 } = require('../services/email.service');
 
+const {
+  cleanText,
+  isStrongPassword,
+  isValidEmail,
+  isValidPersonName
+} = require('../utils/validationHelpers');
+
 const registrar = async (req, res) => {
   try {
     const {
@@ -30,9 +37,25 @@ const registrar = async (req, res) => {
       acepta_terminos
     } = req.body;
 
-    if (!nombres || !apellidos || !correo || !password) {
+    const nombresLimpios = cleanText(nombres);
+    const apellidosLimpios = cleanText(apellidos);
+    const correoNormalizado = cleanText(correo).toLowerCase();
+
+    if (!nombresLimpios || !apellidosLimpios || !correoNormalizado || !password) {
       return res.status(400).json({
         mensaje: 'Nombres, apellidos, correo y contraseña son obligatorios'
+      });
+    }
+
+    if (!isValidPersonName(nombresLimpios) || !isValidPersonName(apellidosLimpios)) {
+      return res.status(400).json({
+        mensaje: 'Nombres y apellidos deben contener solo letras y tener entre 2 y 80 caracteres'
+      });
+    }
+
+    if (!isValidEmail(correoNormalizado)) {
+      return res.status(400).json({
+        mensaje: 'El correo electrónico no tiene un formato válido'
       });
     }
 
@@ -48,7 +71,11 @@ const registrar = async (req, res) => {
       });
     }
 
-    const correoNormalizado = correo.trim().toLowerCase();
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        mensaje: 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número'
+      });
+    }
 
     const usuarioExistente = await buscarUsuarioPorCorreo(correoNormalizado);
 
@@ -58,20 +85,20 @@ const registrar = async (req, res) => {
       });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+        const passwordHash = await bcrypt.hash(password, 10);
 
     const usuarioCreado = await registrarUsuario({
       correo: correoNormalizado,
       password_hash: passwordHash,
-      nombres: nombres.trim(),
-      apellidos: apellidos.trim(),
+      nombres: nombresLimpios,
+      apellidos: apellidosLimpios,
       acepta_terminos
     });
     const tokenVerificacion = await crearTokenVerificacionEmail(usuarioCreado.usuario_id);
 
         await enviarCorreoVerificacion({
         correo: correoNormalizado,
-        nombres: nombres.trim(),
+        nombres: nombresLimpios,
         token: tokenVerificacion
         });
 
@@ -105,7 +132,13 @@ const login = async (req, res) => {
       });
     }
 
-    const correoNormalizado = correo.trim().toLowerCase();
+    const correoNormalizado = cleanText(correo).toLowerCase();
+
+    if (!isValidEmail(correoNormalizado)) {
+      return res.status(400).json({
+        mensaje: 'El correo electrónico no tiene un formato válido'
+      });
+    }
 
     const usuario = await buscarUsuarioPorCorreo(correoNormalizado);
 
@@ -279,7 +312,13 @@ const solicitarRecuperacionPassword = async (req, res) => {
       });
     }
 
-    const correoNormalizado = correo.trim().toLowerCase();
+    const correoNormalizado = cleanText(correo).toLowerCase();
+
+    if (!isValidEmail(correoNormalizado)) {
+      return res.status(400).json({
+        mensaje: 'El correo electrónico no tiene un formato válido'
+      });
+    }
 
     const usuario = await buscarUsuarioPorCorreo(correoNormalizado);
 
@@ -327,6 +366,12 @@ const restablecerPassword = async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({
         mensaje: 'La contraseña debe tener como mínimo 6 caracteres'
+      });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        mensaje: 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número'
       });
     }
 

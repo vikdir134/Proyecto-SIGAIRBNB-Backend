@@ -19,6 +19,11 @@ const {
   eliminarImagenCloudinary
 } = require('../services/cloudinary.service');
 
+const {
+  isPastDateOnly,
+  isDateNotAbsurd
+} = require('../utils/dateHelpers');
+
 const limpiarTexto = (valor) => {
   if (valor === undefined || valor === null) return '';
   return String(valor).trim();
@@ -419,6 +424,18 @@ const crearPublicacionGestion = async (req, res) => {
     if (disponible_desde && !validarFecha(disponible_desde)) {
       return res.status(400).json({
         mensaje: 'La fecha disponible_desde debe tener formato YYYY-MM-DD'
+      });
+    }
+
+    if (disponible_desde && !isDateNotAbsurd(disponible_desde, { minYear: 2000, maxFutureYears: 3 })) {
+      return res.status(400).json({
+        mensaje: 'La fecha de disponibilidad está fuera del rango permitido para el sistema'
+      });
+    }
+
+    if (disponible_desde && isPastDateOnly(disponible_desde)) {
+      return res.status(400).json({
+        mensaje: 'La fecha de disponibilidad no puede ser una fecha pasada'
       });
     }
 

@@ -10,6 +10,10 @@ const {
   listarHistorialTarifas
 } = require('../models/tarifa.model');
 
+const {
+  validateYearAllowed
+} = require('../utils/dateHelpers');
+
 const rolesPermitidos = ['SECRETARIO', 'ADMIN_EMPRESA', 'ADMIN'];
 
 
@@ -123,7 +127,7 @@ const registrarIPC = async (req, res) => {
       });
     }
 
-    if (anioNumero < 2000 || anioNumero > 2100) {
+    if (!validateYearAllowed(anioNumero, { minYear: 2000, maxFutureYears: 1 })) {
       return res.status(400).json({
         mensaje: 'El año ingresado no es válido.'
       });
@@ -143,6 +147,12 @@ const registrarIPC = async (req, res) => {
     if (porcentajeNumero < 0) {
       return res.status(400).json({
         mensaje: 'El porcentaje anual no puede ser negativo.'
+      });
+    }
+
+    if (porcentajeNumero > 100) {
+      return res.status(400).json({
+        mensaje: 'El porcentaje anual no puede superar 100%.'
       });
     }
 

@@ -12,6 +12,11 @@ const {
   listarInmueblesParaDisponibilidad
 } = require('../models/disponibilidad.model');
 
+const {
+  isValidDateOnly,
+  validateDateRange
+} = require('../utils/dateHelpers');
+
 const obtenerBloqueosPorInmueble = async (req, res) => {
   try {
     const { inmueble_id } = req.params;
@@ -81,6 +86,12 @@ const crearBloqueoDisponibilidad = async (req, res) => {
       });
     }
 
+    if (!isValidDateOnly(fecha_inicio) || !isValidDateOnly(fecha_fin)) {
+      return res.status(400).json({
+        mensaje: 'Las fechas deben tener formato YYYY-MM-DD'
+      });
+    }
+
     const inmuebleIdNumero = Number(inmueble_id);
 
     if (Number.isNaN(inmuebleIdNumero) || inmuebleIdNumero <= 0) {
@@ -101,6 +112,22 @@ const crearBloqueoDisponibilidad = async (req, res) => {
     if (fechaFin < fechaInicio) {
       return res.status(400).json({
         mensaje: 'La fecha de fin no puede ser menor que la fecha de inicio'
+      });
+    }
+
+    const erroresRangoBloqueo = validateDateRange({
+      start: fecha_inicio,
+      end: fecha_fin,
+      allowSameDay: true,
+      allowPast: false,
+      maxDays: 370,
+      maxFutureYears: 3
+    });
+
+    if (erroresRangoBloqueo.length > 0) {
+      return res.status(400).json({
+        mensaje: erroresRangoBloqueo[0],
+        errores: erroresRangoBloqueo
       });
     }
 
@@ -297,6 +324,22 @@ const editarBloqueoDisponibilidad = async (req, res) => {
     if (fechaFinDate < fechaInicioDate) {
       return res.status(400).json({
         mensaje: 'La fecha de fin no puede ser menor que la fecha de inicio'
+      });
+    }
+
+    const erroresRangoEdicion = validateDateRange({
+      start: fecha_inicio,
+      end: fecha_fin,
+      allowSameDay: true,
+      allowPast: false,
+      maxDays: 370,
+      maxFutureYears: 3
+    });
+
+    if (erroresRangoEdicion.length > 0) {
+      return res.status(400).json({
+        mensaje: erroresRangoEdicion[0],
+        errores: erroresRangoEdicion
       });
     }
 

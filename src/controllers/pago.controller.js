@@ -51,7 +51,7 @@ const obtenerDetalleReciboParaPago = async (req, res) => {
       });
     }
 
-    if (!recibo_id || isNaN(Number(recibo_id))) {
+    if (!recibo_id || isNaN(Number(recibo_id)) || Number(recibo_id) <= 0) {
       return res.status(400).json({
         mensaje: 'El recibo_id no es válido.'
       });
@@ -95,7 +95,7 @@ const pagarReciboOnline = async (req, res) => {
       });
     }
 
-    if (!recibo_id || isNaN(Number(recibo_id))) {
+    if (!recibo_id || isNaN(Number(recibo_id)) || Number(recibo_id) <= 0) {
       return res.status(400).json({
         mensaje: 'El recibo_id no es válido.'
       });
@@ -108,6 +108,7 @@ const pagarReciboOnline = async (req, res) => {
     } = req.body || {};
 
     const metodoPagoNormalizado = String(metodo_pago).trim().toUpperCase();
+    const referenciaLimpia = referencia ? String(referencia).trim() : null;
 
     const metodosPermitidos = [
       'ONLINE',
@@ -118,6 +119,12 @@ const pagarReciboOnline = async (req, res) => {
     if (!metodosPermitidos.includes(metodoPagoNormalizado)) {
       return res.status(400).json({
         mensaje: 'Método de pago no válido.'
+      });
+    }
+
+    if (referenciaLimpia && referenciaLimpia.length > 100) {
+      return res.status(400).json({
+        mensaje: 'La referencia del pago no debe superar los 100 caracteres.'
       });
     }
 
@@ -132,7 +139,7 @@ const pagarReciboOnline = async (req, res) => {
       recibo_id: Number(recibo_id),
       metodo_pago: metodoPagoNormalizado,
       proveedor_pasarela: proveedorPasarelaFinal,
-      referencia
+      referencia: referenciaLimpia
     });
 
     if (!resultado.ok) {

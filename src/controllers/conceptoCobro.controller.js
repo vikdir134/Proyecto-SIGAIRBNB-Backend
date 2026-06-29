@@ -47,6 +47,7 @@ const validarConcepto = (body) => {
 
   const codigo = normalizarCodigo(body.codigo || body.nombre);
   const nombre = String(body.nombre || '').trim();
+  const descripcion = body.descripcion ? String(body.descripcion).trim() : null;
   const tipo_concepto = String(body.tipo_concepto || '').trim().toUpperCase();
   const categoria = String(body.categoria || '').trim().toUpperCase();
   const metodo_calculo = String(body.metodo_calculo || '').trim().toUpperCase();
@@ -58,6 +59,11 @@ const validarConcepto = (body) => {
 
   if (!codigo) errores.push('El código es obligatorio.');
   if (!nombre) errores.push('El nombre es obligatorio.');
+  if (codigo.length > 50) errores.push('El código no debe superar los 50 caracteres.');
+  if (nombre.length > 120) errores.push('El nombre no debe superar los 120 caracteres.');
+  if (descripcion && descripcion.length > 500) {
+    errores.push('La descripción no debe superar los 500 caracteres.');
+  }
 
   if (!tiposValidos.includes(tipo_concepto)) {
     errores.push('El tipo de concepto no es válido.');
@@ -75,16 +81,26 @@ const validarConcepto = (body) => {
     errores.push('El campo aplica_en no es válido.');
   }
 
-  if (monto_default < 0) {
+  if (!Number.isFinite(monto_default)) {
+    errores.push('El monto por defecto debe ser un número válido.');
+  } else if (monto_default < 0) {
     errores.push('El monto por defecto no puede ser negativo.');
   }
 
-  if (orden_impresion <= 0) {
+  if (!Number.isFinite(orden_impresion)) {
+    errores.push('El orden de impresión debe ser un número válido.');
+  } else if (orden_impresion <= 0) {
     errores.push('El orden de impresión debe ser mayor a cero.');
+  } else if (!Number.isInteger(orden_impresion)) {
+    errores.push('El orden de impresión debe ser un número entero.');
   }
 
-  if (aplica_desde_dias <= 0) {
+  if (!Number.isFinite(aplica_desde_dias)) {
+    errores.push('La cantidad de días desde la que aplica debe ser un número válido.');
+  } else if (aplica_desde_dias <= 0) {
     errores.push('La cantidad de días desde la que aplica debe ser mayor a cero.');
+  } else if (!Number.isInteger(aplica_desde_dias)) {
+    errores.push('La cantidad de días desde la que aplica debe ser un número entero.');
   }
 
   return {
@@ -92,7 +108,7 @@ const validarConcepto = (body) => {
     data: {
       codigo,
       nombre,
-      descripcion: body.descripcion || null,
+      descripcion,
       tipo_concepto,
       categoria,
       metodo_calculo,

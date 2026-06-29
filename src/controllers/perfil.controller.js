@@ -4,6 +4,16 @@ const {
   actualizarNotificaciones
 } = require('../models/perfil.model');
 
+const {
+  cleanOptionalText,
+  cleanText,
+  isValidPersonName,
+  isValidPhone,
+  isValidUrl,
+  onlyDigits,
+  validateTextLength
+} = require('../utils/validationHelpers');
+
 const obtenerMiPerfil = async (req, res) => {
   try {
     const usuarioId = req.usuario.usuario_id;
@@ -47,35 +57,66 @@ const actualizarMiPerfil = async (req, res) => {
       pais
     } = req.body;
 
-    if (!nombres || !apellidos) {
+    const nombresLimpios = cleanText(nombres);
+    const apellidosLimpios = cleanText(apellidos);
+    const telefonoLimpio = telefono ? onlyDigits(telefono) : null;
+    const fotoUrlLimpia = cleanOptionalText(foto_url);
+    const errores = [];
+
+    if (!nombresLimpios || !apellidosLimpios) {
       return res.status(400).json({
         mensaje: 'Nombres y apellidos son obligatorios'
       });
     }
 
-    if (nombres.trim().length < 2) {
+    if (nombresLimpios.length < 2) {
       return res.status(400).json({
         mensaje: 'El nombre debe tener como mínimo 2 caracteres'
       });
     }
 
-    if (apellidos.trim().length < 2) {
+    if (apellidosLimpios.length < 2) {
       return res.status(400).json({
         mensaje: 'El apellido debe tener como mínimo 2 caracteres'
       });
     }
 
+    if (!isValidPersonName(nombresLimpios) || !isValidPersonName(apellidosLimpios)) {
+      errores.push('Nombres y apellidos deben contener solo letras y tener entre 2 y 80 caracteres.');
+    }
+
+    if (!isValidPhone(telefonoLimpio)) {
+      errores.push('El teléfono debe contener entre 7 y 15 dígitos y no puede ser un número repetido.');
+    }
+
+    if (!isValidUrl(fotoUrlLimpia)) {
+      errores.push('La URL de foto debe iniciar con http:// o https://.');
+    }
+
+    validateTextLength(biografia, 500, 'La biografía', errores);
+    validateTextLength(direccion, 255, 'La dirección', errores);
+    validateTextLength(distrito, 100, 'El distrito', errores);
+    validateTextLength(ciudad, 100, 'La ciudad', errores);
+    validateTextLength(pais, 80, 'El país', errores);
+
+    if (errores.length > 0) {
+      return res.status(400).json({
+        mensaje: 'Datos inválidos.',
+        errores
+      });
+    }
+
     const perfilActualizado = await actualizarPerfilBasico({
       usuario_id: usuarioId,
-      nombres: nombres.trim(),
-      apellidos: apellidos.trim(),
-      telefono: telefono ? telefono.trim() : null,
-      foto_url: foto_url ? foto_url.trim() : null,
-      biografia: biografia ? biografia.trim() : null,
-      direccion: direccion ? direccion.trim() : null,
-      distrito: distrito ? distrito.trim() : null,
-      ciudad: ciudad ? ciudad.trim() : null,
-      pais: pais ? pais.trim() : 'Perú'
+      nombres: nombresLimpios,
+      apellidos: apellidosLimpios,
+      telefono: telefonoLimpio,
+      foto_url: fotoUrlLimpia,
+      biografia: cleanOptionalText(biografia),
+      direccion: cleanOptionalText(direccion),
+      distrito: cleanOptionalText(distrito),
+      ciudad: cleanOptionalText(ciudad),
+      pais: cleanText(pais) || 'Perú'
     });
 
     if (!perfilActualizado) {

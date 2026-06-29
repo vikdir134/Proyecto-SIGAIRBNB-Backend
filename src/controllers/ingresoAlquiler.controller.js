@@ -11,6 +11,10 @@ const {
   listarIngresosAlquiler
 } = require('../models/ingresoAlquiler.model');
 
+const {
+  isDateNotAbsurd
+} = require('../utils/dateHelpers');
+
 const obtenerUsuarioId = (req) => {
   return req.usuario?.usuario_id || req.usuario?.id;
 };
@@ -211,7 +215,7 @@ const registrarIngreso = async (req, res) => {
       errores.push('El recibo es obligatorio.');
     }
 
-    if (!importe || importe <= 0) {
+    if (!Number.isFinite(importe) || importe <= 0) {
       errores.push('El importe debe ser mayor a cero.');
     }
 
@@ -232,6 +236,30 @@ const registrarIngreso = async (req, res) => {
 
     if (Number.isNaN(fecha_movimiento.getTime())) {
       errores.push('La fecha del movimiento no es válida.');
+    }
+
+    const fechaMovimientoTexto = !Number.isNaN(fecha_movimiento.getTime())
+      ? fecha_movimiento.toISOString().slice(0, 10)
+      : null;
+
+    if (fechaMovimientoTexto && !isDateNotAbsurd(fechaMovimientoTexto, { minYear: 2000, maxFutureYears: 1 })) {
+      errores.push('La fecha del movimiento está fuera del rango permitido para el sistema.');
+    }
+
+    if (concepto && concepto.length > 150) {
+      errores.push('El concepto no debe superar los 150 caracteres.');
+    }
+
+    if (descripcion && descripcion.length > 500) {
+      errores.push('La descripción no debe superar los 500 caracteres.');
+    }
+
+    if (referencia_externa && referencia_externa.length > 100) {
+      errores.push('La referencia externa no debe superar los 100 caracteres.');
+    }
+
+    if (observaciones && observaciones.length > 500) {
+      errores.push('Las observaciones no deben superar los 500 caracteres.');
     }
 
     if (errores.length > 0) {
@@ -292,6 +320,16 @@ const registrarIngreso = async (req, res) => {
       return res.status(400).json({
         mensaje: 'El importe no puede superar el saldo pendiente del recibo.'
       });
+    }
+
+    if (recibo.fecha_emision) {
+      const fechaEmisionTexto = new Date(recibo.fecha_emision).toISOString().slice(0, 10);
+
+      if (fechaMovimientoTexto && fechaMovimientoTexto < fechaEmisionTexto) {
+        return res.status(400).json({
+          mensaje: 'La fecha de pago no puede ser anterior a la fecha de emisión del recibo.'
+        });
+      }
     }
 
     const resultado = await registrarIngresoAlquiler(

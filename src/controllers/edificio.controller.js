@@ -188,7 +188,7 @@ const obtenerEdificios = async (req, res) => {
 };
 
 const validarNumero = (valor, nombreCampo, opciones = {}) => {
-  const { obligatorio = false, minimo = 0 } = opciones;
+  const { obligatorio = false, minimo = 0, maximo, entero = false } = opciones;
 
   if (valor === undefined || valor === null || valor === '') {
     if (obligatorio) {
@@ -200,12 +200,20 @@ const validarNumero = (valor, nombreCampo, opciones = {}) => {
 
   const numero = Number(valor);
 
-  if (Number.isNaN(numero)) {
+  if (!Number.isFinite(numero)) {
     return `${nombreCampo} debe ser un número válido`;
   }
 
   if (numero < minimo) {
     return `${nombreCampo} no puede ser menor que ${minimo}`;
+  }
+
+  if (maximo !== undefined && numero > maximo) {
+    return `${nombreCampo} no puede ser mayor que ${maximo}`;
+  }
+
+  if (entero && !Number.isInteger(numero)) {
+    return `${nombreCampo} debe ser un número entero`;
   }
 
   return null;
@@ -262,9 +270,9 @@ const crearPisoLocal = async (req, res) => {
 
     const erroresNumericos = [
       validarNumero(area_m2, 'El área en m²', { minimo: 0.01 }),
-      validarNumero(num_habitaciones, 'El número de habitaciones', { minimo: 0 }),
-      validarNumero(num_banos, 'El número de baños', { minimo: 0 }),
-      validarNumero(capacidad_personas, 'La capacidad de personas', { minimo: 0 }),
+      validarNumero(num_habitaciones, 'El número de habitaciones', { minimo: 0, maximo: 100, entero: true }),
+      validarNumero(num_banos, 'El número de baños', { minimo: 0, maximo: 100, entero: true }),
+      validarNumero(capacidad_personas, 'La capacidad de personas', { minimo: 0, maximo: 1000, entero: true }),
       validarNumero(renta_base_mensual, 'La renta base mensual', { minimo: 0 })
     ].filter(Boolean);
 
@@ -685,16 +693,40 @@ const actualizarInmueble = async (req, res) => {
       errores.push('La renta base mensual no puede ser negativa');
     }
 
-    if (habitacionesConvertidas !== null && (Number.isNaN(habitacionesConvertidas) || habitacionesConvertidas < 0)) {
-      errores.push('El número de habitaciones no puede ser negativo');
+    if (
+      habitacionesConvertidas !== null &&
+      (
+        !Number.isFinite(habitacionesConvertidas) ||
+        habitacionesConvertidas < 0 ||
+        habitacionesConvertidas > 100 ||
+        !Number.isInteger(habitacionesConvertidas)
+      )
+    ) {
+      errores.push('El número de habitaciones debe ser un entero entre 0 y 100');
     }
 
-    if (banosConvertidos !== null && (Number.isNaN(banosConvertidos) || banosConvertidos < 0)) {
-      errores.push('El número de baños no puede ser negativo');
+    if (
+      banosConvertidos !== null &&
+      (
+        !Number.isFinite(banosConvertidos) ||
+        banosConvertidos < 0 ||
+        banosConvertidos > 100 ||
+        !Number.isInteger(banosConvertidos)
+      )
+    ) {
+      errores.push('El número de baños debe ser un entero entre 0 y 100');
     }
 
-    if (capacidadConvertida !== null && (Number.isNaN(capacidadConvertida) || capacidadConvertida < 0)) {
-      errores.push('La capacidad de personas no puede ser negativa');
+    if (
+      capacidadConvertida !== null &&
+      (
+        !Number.isFinite(capacidadConvertida) ||
+        capacidadConvertida < 0 ||
+        capacidadConvertida > 1000 ||
+        !Number.isInteger(capacidadConvertida)
+      )
+    ) {
+      errores.push('La capacidad de personas debe ser un entero entre 0 y 1000');
     }
 
     if (errores.length > 0) {

@@ -35,6 +35,13 @@ const {
   crearNotificacion
 } = require('../models/notificacion.model');
 
+const {
+  diffDays,
+  isPastDateOnly,
+  isDateNotAbsurd,
+  validateDateRange
+} = require('../utils/dateHelpers');
+
 const limpiarTexto = (valor) => {
   if (valor === undefined || valor === null) return '';
   return String(valor).trim();
@@ -355,6 +362,21 @@ const solicitarReserva = async (req, res) => {
     if (fecha_fin <= fecha_inicio) {
       return res.status(400).json({
         mensaje: 'La fecha de fin debe ser mayor que la fecha de inicio'
+      });
+    }
+
+    const erroresRangoReserva = validateDateRange({
+      start: fecha_inicio,
+      end: fecha_fin,
+      allowPast: false,
+      maxDays: 730,
+      maxFutureYears: 3
+    });
+
+    if (erroresRangoReserva.length > 0) {
+      return res.status(400).json({
+        mensaje: erroresRangoReserva[0],
+        errores: erroresRangoReserva
       });
     }
 
@@ -1461,6 +1483,18 @@ const solicitarExtensionReserva = async (req, res) => {
       });
     }
 
+    if (!isDateNotAbsurd(nueva_fecha_fin, { minYear: 2000, maxFutureYears: 3 })) {
+      return res.status(400).json({
+        mensaje: 'La nueva fecha de finalización está fuera del rango permitido para el sistema'
+      });
+    }
+
+    if (isPastDateOnly(nueva_fecha_fin)) {
+      return res.status(400).json({
+        mensaje: 'La nueva fecha de finalización no puede ser una fecha pasada'
+      });
+    }
+
     const motivoLimpio = limpiarTexto(motivo);
 
     if (motivoLimpio.length > 500) {
@@ -1504,6 +1538,14 @@ const solicitarExtensionReserva = async (req, res) => {
           'La nueva fecha de finalización debe ser posterior a la fecha final actual',
         fecha_fin_actual: fechaFinActual,
         nueva_fecha_fin
+      });
+    }
+
+    const diasExtension = diffDays(fechaFinActual, nueva_fecha_fin);
+
+    if (diasExtension !== null && diasExtension > 365) {
+      return res.status(400).json({
+        mensaje: 'La extensión no puede superar 365 días adicionales'
       });
     }
 

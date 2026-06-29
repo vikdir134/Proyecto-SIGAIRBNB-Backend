@@ -9,6 +9,10 @@ const {
   listarGastosMantenimiento
 } = require('../models/mantenimiento.model');
 
+const {
+  isDateNotAbsurd
+} = require('../utils/dateHelpers');
+
 const obtenerDatosFormularioGasto = async (req, res) => {
   try {
     const empresa_id = req.usuario.empresa_id;
@@ -93,7 +97,7 @@ const registrarGasto = async (req, res) => {
       errores.push('El concepto del gasto es obligatorio.');
     }
 
-    if (!importe || importe <= 0) {
+    if (!Number.isFinite(importe) || importe <= 0) {
       errores.push('El importe debe ser mayor a cero.');
     }
 
@@ -101,8 +105,32 @@ const registrarGasto = async (req, res) => {
       errores.push('La fecha del movimiento no es válida.');
     }
 
+    const fechaMovimientoTexto = !Number.isNaN(fecha_movimiento.getTime())
+      ? fecha_movimiento.toISOString().slice(0, 10)
+      : null;
+
+    if (fechaMovimientoTexto && !isDateNotAbsurd(fechaMovimientoTexto, { minYear: 2000, maxFutureYears: 1 })) {
+      errores.push('La fecha del movimiento está fuera del rango permitido para el sistema.');
+    }
+
     if (inmueble_id && inmueble_id <= 0) {
       errores.push('El inmueble seleccionado no es válido.');
+    }
+
+    if (concepto && concepto.length > 150) {
+      errores.push('El concepto no debe superar los 150 caracteres.');
+    }
+
+    if (descripcion && descripcion.length > 500) {
+      errores.push('La descripción no debe superar los 500 caracteres.');
+    }
+
+    if (referencia_externa && referencia_externa.length > 100) {
+      errores.push('La referencia externa no debe superar los 100 caracteres.');
+    }
+
+    if (observaciones && observaciones.length > 500) {
+      errores.push('Las observaciones no deben superar los 500 caracteres.');
     }
 
     if (errores.length > 0) {
