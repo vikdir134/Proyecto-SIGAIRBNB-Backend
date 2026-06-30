@@ -21,6 +21,7 @@ const pagoRoutes = require('./routes/pago.routes');
 const mantenimientoRoutes = require('./routes/mantenimiento.routes');
 const ingresoAlquilerRoutes = require('./routes/ingresoAlquiler.routes');
 const tarifaRoutes = require('./routes/tarifa.routes');
+const reporteRoutes = require('./routes/reporte.routes');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/pagos', pagoRoutes);
 app.use('/api/mantenimiento', mantenimientoRoutes);
 app.use('/api/ingresos-alquiler', ingresoAlquilerRoutes);
 app.use('/api/tarifas', tarifaRoutes);
+app.use('/api/reportes', reporteRoutes);
 
 app.get('/', (req, res) => {
   res.json({
